@@ -1,6 +1,21 @@
 import torch
 import torch.nn as nn
 
+class SplitedLayer(nn.Module):
+    def __init__(self, idx, name, layer):
+        super().__init__()
+        self.idx = idx
+        self.name = name
+        self.layer = layer
+
+class SplitedParam(nn.Module):
+    def __init__(self, idx, name, param):
+        super().__init__()
+        self.idx = idx
+        self.name = name
+        assert isinstance(param, torch.Tensor)
+        self.param = param
+
 def split_model(model):
     modules = []
     for m in model.children():
@@ -26,18 +41,18 @@ def split_named_model(model, parent_name=''):
 
 from .ZO_Estim_MC import ZO_Estim_MC
 
-def build_ZO_Estim(config, model, obj_fn):
+def build_ZO_Estim(config, model, obj_fn, trainable_param_list, trainable_layer_list):
     if config.name == 'ZO_Estim_MC':
         ZO_Estim = ZO_Estim_MC(
             model = model, 
             obj_fn = obj_fn,
+            trainable_param_list = trainable_param_list,
+            trainable_layer_list = trainable_layer_list,
 
             sigma = config.sigma,
             n_sample  = config.n_sample,
             signSGD = config.signSGD,
-            trainable_param_list = config.trainable_param_list,
-            trainable_layer_list = config.trainable_layer_list,
-
+            
             quantize_method = config.quantize_method,
             estimate_method = config.estimate_method,
             sample_method = config.sample_method,

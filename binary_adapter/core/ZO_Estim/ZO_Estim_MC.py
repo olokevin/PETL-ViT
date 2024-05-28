@@ -7,23 +7,8 @@ from torch import nn
 import torch.nn.functional as F
 
 from scipy.stats import qmc
-from .ZO_Estim_entry import split_model, split_named_model
+from .ZO_Estim_entry import split_model, split_named_model, SplitedLayer, SplitedParam
 from .QMC_sampler import sphere_n, coord_basis, block_mask_generator, layer_mask_generator
-
-class SplitedLayer(nn.Module):
-    def __init__(self, idx, name, layer):
-        super().__init__()
-        self.idx = idx
-        self.name = name
-        self.layer = layer
-
-class SplitedParam(nn.Module):
-    def __init__(self, idx, name, param):
-        super().__init__()
-        self.idx = idx
-        self.name = name
-        assert isinstance(param, torch.Tensor)
-        self.param = param
 
 class ZO_Estim_MC(nn.Module):
     """
@@ -36,15 +21,15 @@ class ZO_Estim_MC(nn.Module):
         self,
         model: nn.Module,
         obj_fn: Callable,
-
-        sigma: float = 0.1,
-        n_sample: int = 20,
-        signSGD: bool = False,
         # For param perturb ZO. A list of SplitedParam. Specifies what Tensors should be optimized.
         trainable_param_list: list = None,
         # For actv  perturb ZO. A list of SplitedLayer. Specifies what layers' activations should be perturbed.
         trainable_layer_list: list = None,
 
+        sigma: float = 0.1,
+        n_sample: int = 20,
+        signSGD: bool = False,
+        
         quantize_method: str = 'None',  # 'None', 'u_fp-grad_fp', 'u_fp-grad_int', 'u_int-grad_int', 'u_int-grad_fp'
         estimate_method: str = 'forward',
         sample_method: str = 'gaussian',
@@ -53,10 +38,6 @@ class ZO_Estim_MC(nn.Module):
 
         self.model = model
         self.obj_fn = obj_fn
-
-        self.sigma = sigma
-        self.n_sample = n_sample
-        self.signSGD = signSGD
 
         if trainable_param_list == 'all':
             self.trainable_param_list = []
@@ -79,10 +60,10 @@ class ZO_Estim_MC(nn.Module):
             self.trainable_layer_list = self.splited_layer_list
         else:
             self.trainable_layer_list = trainable_layer_list
-            # self.trainable_layer_list = []
-            # for splited_layer in self.splited_layer_list:
-            #     if splited_layer.name in trainable_layer_list:
-            #         self.trainable_layer_list.append(splited_layer)
+
+        self.sigma = sigma
+        self.n_sample = n_sample
+        self.signSGD = signSGD
 
         self.quantize_method = quantize_method
         
@@ -148,28 +129,6 @@ class ZO_Estim_MC(nn.Module):
             return NotImplementedError('Unlnown sample method', self.sample_method)
         
         return sample
-
-    # def _add_params_perturbation(self, sigma, u):
-    #     u_idx = 0
-    #     for name, param in self.model.named_parameters():
-    #         if name in self.trainable_param_list:
-    #             # Generate random perturbation with the same shape as the parameter
-    #             param_len = param.numel()
-    #             param_shape = param.shape
-
-    #             if 'u_fp' in self.quantize_method:
-    #                 name_list = name.split('.')
-    #                 w_scale = torch.tensor(self.model[int(name_list[0])][int(name_list[1])].conv[int(name_list[3])].w_scale, device=self.device).view(-1, 1, 1, 1)
-    #                 perturbation = u[u_idx : u_idx+param_len].reshape(param_shape) * sigma / w_scale
-    #                 perturbation = perturbation.round()
-    #             elif 'u_int' in self.quantize_method:
-    #                 assert type(sigma) is int
-    #                 perturbation = u[u_idx : u_idx+param_len].round().reshape(param_shape) * sigma
-    #             else:
-    #                 perturbation = u[u_idx : u_idx+param_len].reshape(param_shape) * sigma
-    #             # Add perturbation to the parameter
-    #             param.data.add_(perturbation)
-    #             u_idx += param_len 
     
     def get_single_param_ZO_gradient(self, splited_param, block_in, old_loss, sigma, estimate_method, sample_method):
         idx = splited_param.odx
@@ -314,27 +273,3 @@ class ZO_Estim_MC(nn.Module):
             self.get_param_ZO_gradient(old_loss)
         
         return outputs, old_loss, self.estim_grads
-    
-    # def update_grad(self):
-    #     if self.perturb_method == 'activation':
-    #         pass
-    #     else:
-    #         u_idx = 0
-    #         for name, param in self.model.named_parameters():
-    #             if name in self.trainable_param_list:
-    #                 # extract cooresponding grad vector
-    #                 param_len = param.numel()
-    #                 param_shape = param.shape
-    #                 param_grad = self.estim_grads[u_idx : u_idx+param_len].reshape(param_shape)
-    #                 # Update param.grad
-    #                 # if 'u_fp' in self.quantize_method:
-
-    #                 # name_list = name.split('.')
-    #                 # w_scale = torch.tensor(self.model[int(name_list[0])][int(name_list[1])].conv[int(name_list[3])].w_scale, device=self.device).view(-1, 1, 1, 1)
-    #                 # param_grad = param_grad * w_scale
-
-    #                 if 'grad_int' in self.quantize_method:
-    #                     param_grad = param_grad.round()
-                    
-    #                 param.grad = param_grad
-    #                 u_idx += param_len

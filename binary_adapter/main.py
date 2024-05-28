@@ -12,7 +12,7 @@ from utils import save, load, load_config, set_seed, QLinear, AverageMeter, load
 import adaptformer
 import lora
 
-from core.ZO_Estim.ZO_Estim_entry import build_ZO_Estim, build_obj_fn, split_model, split_named_model
+from core.ZO_Estim.ZO_Estim_entry import build_ZO_Estim, build_obj_fn, split_model, split_named_model, SplitedLayer, SplitedParam
 
 
 
@@ -37,8 +37,6 @@ def train(args, model, dl, opt, scheduler, epoch, ZO_Estim=None):
                     obj_fn = build_obj_fn(obj_fn_type, data=x, target=y, model=model, criterion=F.cross_entropy)
                     ZO_Estim.update_obj_fn(obj_fn)
                     outputs, loss, grads = ZO_Estim.estimate_grad()
-                    ZO_Estim.update_grad()
-
             opt.step()
         if scheduler is not None:
             scheduler.step(ep)
@@ -110,7 +108,10 @@ if __name__ == '__main__':
 
     splited_named_modules = split_named_model(vit)
     for name, block in splited_named_modules.items():
-        print(name, block)
+        print(name)
+    
+    for name, layer in vit.named_modules():
+        print(name)
     
     if not args.eval:
         trainable = []
@@ -123,9 +124,25 @@ if __name__ == '__main__':
         scheduler = CosineLRScheduler(opt, t_initial=100,
                                       warmup_t=10, lr_min=1e-5, warmup_lr_init=1e-6, decay_rate=0.1)
         
+        ### Param perturb 
+        param_perturb_list = args.ZO_Estim.param_perturb_list
+        trainable_param_list = []
+        assert isinstance(param_perturb_list, list)
+        for name, param in vit.named_parameters():
+            if any(s in name for s in param_perturb_list):
+                trainable_param_list.append(SplitedParam(idx=int(name.split('.')[1])+2, name=name, param=param))
+        
+        ### Actv perturb 
+        actv_perturb_list = args.ZO_Estim.actv_perturb_list
+        trainable_layer_list = []
+        assert isinstance(actv_perturb_list, list)
+        for name, layer in vit.named_modules():
+            if any(s in name for s in actv_perturb_list):
+                trainable_layer_list.append(SplitedLayer(idx=int(name.split('.')[1])+2, name=name, layer=layer))
+        
         if args.ZO_Estim.en is True:
             obj_fn = None
-            ZO_Estim = build_ZO_Estim(args.ZO_Estim, model=vit, obj_fn=obj_fn)
+            ZO_Estim = build_ZO_Estim(args.ZO_Estim, model=vit, obj_fn=obj_fn, trainable_param_list=trainable_param_list, trainable_layer_list=trainable_layer_list )
         else:
             ZO_Estim = None
         

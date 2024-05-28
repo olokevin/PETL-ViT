@@ -4,10 +4,8 @@ sigma: 0.01
 n_sample: 10
 signSGD: False
 
-trainable_param_list: all
-# trainable_param_list: ['net.tensorized_fc2.weight.factors.factor_0', 'net.tensorized_fc2.weight.factors.factor_1']
-
-trainable_layer_list: all
+param_perturb_list: null
+actv_perturb_list: ['adapter_mlp',]
 
 quantize_method: None
 
@@ -24,15 +22,7 @@ estimate_method: forward
 obj_fn_type: classifier_layerwise
 perturb_method: activation
 
-# obj_fn_type: classifier_row
-# perturb_method: single
-
 # sample_method: uniform
 # sample_method: gaussian
 # sample_method: bernoulli
 sample_method: coord_basis
-
-prior_method: None
-# prior_method: last_grad_perturb
-# prior_method: mov_avg_perturb
-# prior_method: last_grad_neighbor
