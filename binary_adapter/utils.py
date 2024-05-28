@@ -178,6 +178,10 @@ def load_model(model, path, bihead=False):
 
     assert len(byte_str) == 0
 
+def load_ZO_Estim_config(args):
+    with open(os.path('configs/ZO_Estim.yaml'),'r') as f:
+        args.ZO_Estim = yaml.load(f, Loader=yaml.FullLoader)
+
 
 def load_config(args):
     with open(

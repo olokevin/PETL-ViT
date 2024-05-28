@@ -80,7 +80,8 @@ class ImageFilelist(data.Dataset):
 
 
 def get_data(name, normalize=True, batch_size=64, evaluate=True):
-    root = './vtab/' + name
+    # root = './vtab/' + name
+    root =  os.path.expanduser('~/dataset/vtab-1k/') + name
     if normalize:
         transform = transforms.Compose([
             transforms.Resize((224, 224), interpolation=3),

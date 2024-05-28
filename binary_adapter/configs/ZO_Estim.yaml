@@ -1,0 +1,38 @@
+en: True
+name: ZO_Estim_MC
+sigma: 0.01
+n_sample: 10
+signSGD: False
+
+trainable_param_list: all
+# trainable_param_list: ['net.tensorized_fc2.weight.factors.factor_0', 'net.tensorized_fc2.weight.factors.factor_1']
+
+trainable_layer_list: all
+
+quantize_method: None
+
+mask_method: None
+# mask_method: block-10
+# mask_method: layer
+
+estimate_method: forward
+# estimate_method: antithetic
+
+# obj_fn_type: classifier
+# perturb_method: batch
+
+obj_fn_type: classifier_layerwise
+perturb_method: activation
+
+# obj_fn_type: classifier_row
+# perturb_method: single
+
+# sample_method: uniform
+# sample_method: gaussian
+# sample_method: bernoulli
+sample_method: coord_basis
+
+prior_method: None
+# prior_method: last_grad_perturb
+# prior_method: mov_avg_perturb
+# prior_method: last_grad_neighbor

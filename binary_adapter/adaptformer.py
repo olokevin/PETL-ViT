@@ -26,13 +26,52 @@ class Adapter(nn.Module):
         self.dropout = nn.Dropout(0.1)
         self.dim = dim
 
+        self.perturb_forward_flag = False
+        self.perturb_vec = None
+        self.pre_actv = None
+
+        # Register forward hook to get output shape
+        self.register_forward_hook(self.output_shape_hook)
+
     def forward(self, x):
         B, N, C = x.shape
         x_down = self.adapter_down(x)
         x_down = self.act(x_down)
         x_down = self.dropout(x_down)
+
+        if self.perturb_forward_flag:
+            self.pre_actv = x
+            self.binary_mask = x_down.ne(0)
+
         x_up = self.adapter_up(x_down)
-        return x_up
+
+        if self.perturb_forward_flag:
+            return x_up + self.perturb_vec.reshape(x_up.shape)
+        else:
+            return x_up
+    
+    def en_perturb_forward(self, u):
+        self.perturb_forward_flag = True
+        self.perturb_vec = u
+    
+    def disable_perturb_forward(self):
+        self.perturb_forward_flag = False
+        self.perturb_vec = None
+    
+    def output_shape_hook(self, module, input, output):
+        # Get the shape of the output
+        self.output_shape = output.shape
+
+    def get_output_shape(self):
+        return self.output_shape
+
+    def local_backward(self, grad_output, pre_activ):
+        self.adapter_up.weight.grad = torch.matmul(grad_output.T, pre_activ)
+        self.adapter_up.bias.grad = torch.mean(grad_output, dim=0)
+
+        adapter_down_grad_output = torch.matmul(grad_output, self.adapter_up.weight)
+        self.adapter_down.weight.grad = torch.matmul(adapter_down_grad_output.T, pre_activ)
+        self.adapter_down.bias.grad = torch.mean(adapter_down_grad_output, dim=0)
 
 
 def set_adapter(model, dim=32, s=1, bit=1):

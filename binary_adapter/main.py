@@ -8,12 +8,15 @@ from timm.models import create_model
 from timm.scheduler.cosine_lr import CosineLRScheduler
 from argparse import ArgumentParser
 from vtab import *
-from utils import save, load, load_config, set_seed, QLinear, AverageMeter
+from utils import save, load, load_config, set_seed, QLinear, AverageMeter, load_ZO_Estim_config
 import adaptformer
 import lora
 
+from core.ZO_Estim.ZO_Estim_entry import build_ZO_Estim, build_obj_fn, split_model, split_named_model
 
-def train(args, model, dl, opt, scheduler, epoch):
+
+
+def train(args, model, dl, opt, scheduler, epoch, ZO_Estim=None):
     model.train()
     model = model.cuda()
     pbar = tqdm(range(epoch))
@@ -24,8 +27,18 @@ def train(args, model, dl, opt, scheduler, epoch):
             x, y = batch[0].cuda(), batch[1].cuda()
             out = model(x)
             loss = F.cross_entropy(out, y)
-            opt.zero_grad()
-            loss.backward()
+
+            if ZO_Estim is None:
+                opt.zero_grad()
+                loss.backward()
+            else:
+                obj_fn_type = args.ZO_Estim.obj_fn
+                with torch.no_grad():
+                    obj_fn = build_obj_fn(obj_fn_type, data=x, target=y, model=model, criterion=F.cross_entropy)
+                    ZO_Estim.update_obj_fn(obj_fn)
+                    outputs, loss, grads = ZO_Estim.estimate_grad()
+                    ZO_Estim.update_grad()
+
             opt.step()
         if scheduler is not None:
             scheduler.step(ep)
@@ -68,10 +81,15 @@ if __name__ == '__main__':
     parser.add_argument('--config_path', type=str, default='.')
     parser.add_argument('--model_path', type=str, default='.')
     parser.add_argument('--load_config', action='store_true', default=False)
+    parser.add_argument('--ZO_Estim', action='store_true', default=False)
     args = parser.parse_args()
     print(args)
     if args.eval or args.load_config:
         load_config(args)
+    
+    if args.ZO_Estim:
+        load_ZO_Estim_config(args)
+
     set_seed(args.seed)
     args.best_acc = 0
     vit = create_model(args.model, checkpoint_path='./ViT-B_16.npz', drop_path_rate=0.1)
@@ -90,6 +108,10 @@ if __name__ == '__main__':
         lora.set_adapter(vit, dim=args.dim, s=args.scale, bit=args.bit)
         vit.head = QLinear(768, get_classes_num(args.dataset), 1)
 
+    splited_named_modules = split_named_model(vit)
+    for name, block in splited_named_modules.items():
+        print(name, block)
+    
     if not args.eval:
         trainable = []
         for n, p in vit.named_parameters():
@@ -100,7 +122,14 @@ if __name__ == '__main__':
         opt = AdamW(trainable, lr=args.lr, weight_decay=args.wd)
         scheduler = CosineLRScheduler(opt, t_initial=100,
                                       warmup_t=10, lr_min=1e-5, warmup_lr_init=1e-6, decay_rate=0.1)
-        vit = train(args, vit, train_dl, opt, scheduler, epoch=100)
+        
+        if args.ZO_Estim.en is True:
+            obj_fn = None
+            ZO_Estim = build_ZO_Estim(args.ZO_Estim, model=vit, obj_fn=obj_fn)
+        else:
+            ZO_Estim = None
+        
+        vit = train(args, vit, train_dl, opt, scheduler, epoch=100, ZO_Estim=ZO_Estim)
 
     else:
         load(args, vit)
