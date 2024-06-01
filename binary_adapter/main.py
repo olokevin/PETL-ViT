@@ -8,46 +8,138 @@ from timm.models import create_model
 from timm.scheduler.cosine_lr import CosineLRScheduler
 from argparse import ArgumentParser
 from vtab import *
-from utils import save, load, load_config, set_seed, QLinear, AverageMeter, load_ZO_Estim_config
+from utils import save, load, load_config, set_seed, QLinear, AverageMeter, load_ZO_Estim_config, logger
 import adaptformer
 import lora
 
-from core.ZO_Estim.ZO_Estim_entry import build_ZO_Estim, build_obj_fn, split_model, split_named_model, SplitedLayer, SplitedParam
-
-
+import time
+from core.ZO_Estim.ZO_Estim_entry import build_ZO_Estim, build_obj_fn, SplitedLayer, SplitedParam, vit_get_iterable_block_name, vit_pre_block_forward, vit_post_block_forward
 
 def train(args, model, dl, opt, scheduler, epoch, ZO_Estim=None):
     model.train()
-    model = model.cuda()
-    pbar = tqdm(range(epoch))
-    for ep in pbar:
+    # pbar = tqdm(range(epoch))
+
+    criterion = torch.nn.CrossEntropyLoss()
+    
+    # for ep in pbar:
+    for ep in range(epoch):
         model.train()
         model = model.cuda()
-        for i, batch in enumerate(dl):
-            x, y = batch[0].cuda(), batch[1].cuda()
-            out = model(x)
-            loss = F.cross_entropy(out, y)
+        train_acc = AverageMeter()
+        train_loss = 0
 
-            if ZO_Estim is None:
-                opt.zero_grad()
-                loss.backward()
-            else:
-                obj_fn_type = args.ZO_Estim.obj_fn
-                with torch.no_grad():
-                    obj_fn = build_obj_fn(obj_fn_type, data=x, target=y, model=model, criterion=F.cross_entropy)
-                    ZO_Estim.update_obj_fn(obj_fn)
-                    outputs, loss, grads = ZO_Estim.estimate_grad()
-            opt.step()
+        ### Disable Dropout and DropPath for ZO training
+        if ZO_Estim is not None:
+            from timm.models.layers import DropPath
+            for module in model.modules():
+                if isinstance(module, torch.nn.Dropout):
+                    module.p = 0
+                if isinstance(module, DropPath):
+                    module.drop_prob = 0
+            
+        with tqdm(total=len(dl), desc='Train Epoch #{}'.format(ep)) as t:
+            for i, batch in enumerate(dl):
+                x, y = batch[0].cuda(), batch[1].cuda()
+                    
+                if ZO_Estim is None:
+                    out = model(x)
+                    loss = criterion(out, y)
+                    opt.zero_grad()
+                    loss.backward()
+                else:
+                    ##### Test #####
+                    if args.debug:
+                        out = model(x)
+                        loss = criterion(out, y)
+                        opt.zero_grad()
+                        loss.backward()  
+
+                        try:
+                            block_idx = args.ZO_Estim.param_perturb_block_idx_list[-1]
+                        except:
+                            try:
+                                block_idx = args.ZO_Estim.actv_perturb_block_idx_list[-1]
+                            except:
+                                block_idx = -1
+                        splited_layer = SplitedLayer(idx=block_idx, name=f'blocks.{block_idx}.adapter_mlp', layer=model.blocks[block_idx].adapter_mlp)
+
+                        # FO_grad = splited_layer.layer.out_grad[0].data
+                        FO_adapter_up_grad_w = splited_layer.layer.adapter_up.weight.grad.data
+                        FO_adapter_down_grad_w = splited_layer.layer.adapter_down.weight.grad.data
+                    ##### Test #####
+
+                    obj_fn_type = ZO_Estim.obj_fn_type
+                    kwargs = {}
+                    if obj_fn_type == 'classifier_layerwise':
+                        kwargs = {'get_iterable_block_name': vit_get_iterable_block_name, "pre_block_forward": vit_pre_block_forward, "post_block_forward": vit_post_block_forward}
+                    with torch.no_grad():
+                        out = model(x)
+                        loss = criterion(out, y)
+                        obj_fn = build_obj_fn(obj_fn_type, data=x, target=y, model=model, criterion=criterion, **kwargs)
+                        ZO_Estim.update_obj_fn(obj_fn)
+                        ZO_Estim.estimate_grad()
+                    
+                    if args.debug:
+                        # ZO_grad = splited_layer.layer.out_grad[0].data
+                        ZO_adapter_up_grad_w = splited_layer.layer.adapter_up.weight.grad.data
+                        ZO_adapter_down_grad_w = splited_layer.layer.adapter_down.weight.grad.data
+
+                        # print('\n Grad output')
+                        # print('cos sim grad_output', F.cosine_similarity(FO_grad.view(-1), ZO_grad.view(-1), dim=0))
+                        # print('FO_grad:', torch.linalg.norm(FO_grad))
+                        # print('ZO_grad:', torch.linalg.norm(ZO_grad))
+
+                        # logger.info('Adapter_down')
+                        # logger.info(f'weight cos sim {F.cosine_similarity(FO_adapter_down_grad_w.view(-1), ZO_adapter_down_grad_w.view(-1), dim=0)}')
+                        # logger.info(f'FO_weight_grad norm: {torch.linalg.norm(FO_adapter_down_grad_w)}')
+                        # logger.info(f'ZO_weight_grad norm: {torch.linalg.norm(ZO_adapter_down_grad_w)}')
+                        # logger.info(f'ZO/FO: {torch.linalg.norm(ZO_adapter_down_grad_w)/torch.linalg.norm(FO_adapter_down_grad_w)}')   
+
+                        logger.info('Adapter_up')
+                        logger.info(f'weight cos sim {F.cosine_similarity(FO_adapter_up_grad_w.view(-1), ZO_adapter_up_grad_w.view(-1), dim=0)}')
+                        logger.info(f'FO_weight_grad norm: {torch.linalg.norm(FO_adapter_up_grad_w)}')
+                        logger.info(f'ZO_weight_grad norm: {torch.linalg.norm(ZO_adapter_up_grad_w)}')
+                        logger.info(f'ZO/FO:  {torch.linalg.norm(ZO_adapter_up_grad_w)/torch.linalg.norm(FO_adapter_up_grad_w)}')
+                
+                opt.step()
+
+                train_acc.update(out, y)
+                train_loss += loss.item()
+
+                train_info_dict = {
+                    'train/acc': train_acc.result().item(),
+                    'train/loss': loss.item(),
+                    'train/lr': opt.param_groups[0]['lr'],
+                }
+                
+                t.set_postfix(train_info_dict)
+                t.update()
+        
+        ### Epoch training ends
         if scheduler is not None:
             scheduler.step(ep)
+        
+        train_loss = train_loss / len(dl)
+        train_info_dict = {
+            'train/acc': train_acc.result().item(),
+            'train/loss': train_loss,
+            'train/lr': opt.param_groups[0]['lr'],
+        }
+        logger.info(f'epoch {ep}: f{train_info_dict}')
+
         if ep % 10 == 9:
             acc = test(vit, test_dl)
             if acc > args.best_acc:
                 args.best_acc = acc
                 save(args, model)
-            pbar.set_description('best_acc ' + str(args.best_acc))
+            # pbar.set_description('best_acc ' + str(args.best_acc))
 
-    model = model.cpu()
+            test_info_dict = {
+                'test/acc': acc,
+                'test/best_acc': args.best_acc,
+            }
+            logger.info(f'epoch {ep}: f{test_info_dict}')
+
     return model
 
 
@@ -77,11 +169,13 @@ if __name__ == '__main__':
                         choices=['adaptformer', 'adaptformer-bihead', 'lora', 'lora-bihead'])
     parser.add_argument('--eval', action='store_true', default=False)
     parser.add_argument('--config_path', type=str, default='.')
-    parser.add_argument('--model_path', type=str, default='.')
+    # parser.add_argument('--model_path', type=str, default='.')
+    parser.add_argument('--model_path', type=str, metavar='DIR', help='run directory')
     parser.add_argument('--load_config', action='store_true', default=False)
     parser.add_argument('--ZO_Estim', action='store_true', default=False)
+    parser.add_argument('--debug', action='store_true', default=False)
     args = parser.parse_args()
-    print(args)
+    
     if args.eval or args.load_config:
         load_config(args)
     
@@ -89,6 +183,25 @@ if __name__ == '__main__':
         load_ZO_Estim_config(args)
 
     set_seed(args.seed)
+
+    if args.model_path is None:
+        if args.ZO_Estim:
+            training_method = 'ZO'
+        else:
+            training_method = 'FO'
+        args.model_path = os.path.join(
+            "./runs",
+            args.method,
+            args.dataset,
+            training_method,
+            time.strftime("%Y%m%d-%H%M%S")+'-'+str(os.getpid())
+        )
+    
+    os.makedirs(args.model_path, exist_ok=True)
+    logger.init(args, args.model_path)  # dump exp config
+    logger.info(str(os.getpid()))
+    logger.info(f'{args}')
+
     args.best_acc = 0
     vit = create_model(args.model, checkpoint_path='./ViT-B_16.npz', drop_path_rate=0.1)
     train_dl, test_dl = get_data(args.dataset, normalize=False)
@@ -105,13 +218,27 @@ if __name__ == '__main__':
     elif args.method == 'lora-bihead':
         lora.set_adapter(vit, dim=args.dim, s=args.scale, bit=args.bit)
         vit.head = QLinear(768, get_classes_num(args.dataset), 1)
-
-    splited_named_modules = split_named_model(vit)
-    for name, block in splited_named_modules.items():
-        print(name)
     
-    for name, layer in vit.named_modules():
-        print(name)
+    ### Model structure
+    # for name, m in vit.named_children():
+    #     print(name)
+    #     if isinstance(m, (torch.nn.Sequential,)):
+    #         for layer_name, layer in m.named_children():
+    #             print(layer_name)
+
+    # for name, layer in vit.named_parameters():
+    #     print(name)
+    
+    ### Register backward hook for debugging
+    if args.debug:
+        def save_grad(module, grad_input, grad_output):
+            module.in_grad = grad_input
+            module.out_grad = grad_output
+
+        from adaptformer import Adapter
+        for name, layer in vit.named_modules():
+            if type(layer) == Adapter:
+                layer.adapter_up.register_full_backward_hook(save_grad)
     
     if not args.eval:
         trainable = []
@@ -124,29 +251,15 @@ if __name__ == '__main__':
         scheduler = CosineLRScheduler(opt, t_initial=100,
                                       warmup_t=10, lr_min=1e-5, warmup_lr_init=1e-6, decay_rate=0.1)
         
-        ### Param perturb 
-        param_perturb_list = args.ZO_Estim.param_perturb_list
-        trainable_param_list = []
-        assert isinstance(param_perturb_list, list)
-        for name, param in vit.named_parameters():
-            if any(s in name for s in param_perturb_list):
-                trainable_param_list.append(SplitedParam(idx=int(name.split('.')[1])+2, name=name, param=param))
-        
-        ### Actv perturb 
-        actv_perturb_list = args.ZO_Estim.actv_perturb_list
-        trainable_layer_list = []
-        assert isinstance(actv_perturb_list, list)
-        for name, layer in vit.named_modules():
-            if any(s in name for s in actv_perturb_list):
-                trainable_layer_list.append(SplitedLayer(idx=int(name.split('.')[1])+2, name=name, layer=layer))
-        
-        if args.ZO_Estim.en is True:
-            obj_fn = None
-            ZO_Estim = build_ZO_Estim(args.ZO_Estim, model=vit, obj_fn=obj_fn, trainable_param_list=trainable_param_list, trainable_layer_list=trainable_layer_list )
+        vit = vit.cuda()
+        if args.ZO_Estim:
+            ZO_Estim = build_ZO_Estim(args.ZO_Estim, model=vit)
         else:
             ZO_Estim = None
-        
+
         vit = train(args, vit, train_dl, opt, scheduler, epoch=100, ZO_Estim=ZO_Estim)
+
+        vit = vit.cpu()
 
     else:
         load(args, vit)

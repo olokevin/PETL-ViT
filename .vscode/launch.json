@@ -5,17 +5,31 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "vtab",
+      "name": "ZO_vtab_32",
       "type": "debugpy",
       "request": "launch",
       "program": "main.py",
       "console": "integratedTerminal",
       "cwd": "${workspaceFolder}/binary_adapter",
       "env": {
-        "CUDA_VISIBLE_DEVICES": "0",
+        "CUDA_VISIBLE_DEVICES": "1",
         "PYDEVD_WARN_SLOW_RESOLVE_TIMEOUT": "2"
       },
-      "args": ["--dataset", "oxford_iiit_pet", "--method", "adaptformer-bihead", "--dim", "32", "--bit", "1", "--load_config", "--model_path", "./ckpts"],
+      "args": ["--debug", "--ZO_Estim", "--dataset", "oxford_iiit_pet", "--method", "adaptformer", "--dim", "1", "--bit", "32", "--scale", "0.01"],
+      "justMyCode": true
+    },
+    {
+      "name": "ZO_vtab_quantize",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "main.py",
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}/binary_adapter",
+      "env": {
+        "CUDA_VISIBLE_DEVICES": "1",
+        "PYDEVD_WARN_SLOW_RESOLVE_TIMEOUT": "2"
+      },
+      "args": ["--debug", "--ZO_Estim", "--dataset", "oxford_iiit_pet", "--method", "adaptformer", "--dim", "32", "--bit", "1", "--load_config"],
       "justMyCode": true
     },
   ]

@@ -1,28 +1,32 @@
+# en: False
 en: True
 name: ZO_Estim_MC
 sigma: 0.01
-n_sample: 10
+n_sample: 1
 signSGD: False
 
-param_perturb_list: null
-actv_perturb_list: ['adapter_mlp',]
+actv_perturb_layer_list: null
+# actv_perturb_layer_list: ['Adapter',]
+# actv_perturb_block_idx_list: all
+# actv_perturb_block_idx_list: [8,]
 
-quantize_method: None
-
-mask_method: None
-# mask_method: block-10
-# mask_method: layer
-
-estimate_method: forward
-# estimate_method: antithetic
+# param_perturb_param_list: null
+param_perturb_param_list: ['adapter_down.weight','adapter_up.weight']
+param_perturb_block_idx_list: all
+# param_perturb_param_list: ['adapter_up.weight']
+# param_perturb_block_idx_list: [8,]
 
 # obj_fn_type: classifier
-# perturb_method: batch
-
 obj_fn_type: classifier_layerwise
-perturb_method: activation
+
+quantized: False
+
+# estimate_method: forward
+estimate_method: antithetic
 
 # sample_method: uniform
-# sample_method: gaussian
+sample_method: gaussian
 # sample_method: bernoulli
-sample_method: coord_basis
+# sample_method: coord_basis
+
+normalize_perturbation: True

@@ -179,14 +179,15 @@ def load_model(model, path, bihead=False):
     assert len(byte_str) == 0
 
 def load_ZO_Estim_config(args):
-    with open(os.path('configs/ZO_Estim.yaml'),'r') as f:
+    with open(os.path.join('configs/ZO_Estim.yaml'),'r') as f:
         args.ZO_Estim = yaml.load(f, Loader=yaml.FullLoader)
+    
+    from easydict import EasyDict
+    args.ZO_Estim = EasyDict(args.ZO_Estim)
 
 
 def load_config(args):
-    with open(
-            os.path.join(args.config_path, 'configs/%s/%s-bit%d-dim%d.yaml' % (args.method, args.dataset, args.bit, args.dim)),
-            'r') as f:
+    with open(os.path.join(args.config_path, 'configs/%s/%s-bit%d-dim%d.yaml' % (args.method, args.dataset, args.bit, args.dim)),'r') as f:
         args.scale = yaml.load(f, Loader=yaml.FullLoader)['scale']
 
 
@@ -212,3 +213,48 @@ class AverageMeter:
 
     def result(self):
         return self.sum / self.count
+
+
+import sys
+from loguru import logger as _logger
+
+_logger.remove()
+_logger.add(sys.stdout,
+            level='DEBUG',
+            format=(
+                # '<green>[{time:YYYY-MM-DD HH:mm:ss.SSS}]</green> '
+                '<level>{message}</level>')
+            )
+
+def configs2dict(cfg):
+    from easydict import EasyDict
+    if isinstance(cfg, EasyDict):
+        cfg = dict(cfg)
+        key2cast = [k for k in cfg if isinstance(cfg[k], EasyDict)]
+        for k in key2cast:
+            cfg[k] = configs2dict(cfg[k])
+        return cfg
+    else:
+        return cfg
+
+class ExpLogger:
+    def init(self, args, run_dir):
+        assert run_dir is not None, 'Empty run directory!'
+        # dumping running configs
+        _path = os.path.join(run_dir, 'config.yaml')
+        with open(_path, 'w') as f:
+            yaml.dump(configs2dict(args), f)
+
+        # also dump running log to file
+        _logger.add(os.path.join(run_dir, 'exp.log'))
+
+    @staticmethod
+    def info(*args):
+        _logger.info(*args)
+
+    @staticmethod
+    def debug(*args):
+        _logger.debug(*args)
+
+
+logger = ExpLogger()
