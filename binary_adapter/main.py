@@ -14,7 +14,7 @@ import lora
 
 import time
 from core.ZO_Estim.ZO_Estim_entry import build_ZO_Estim, build_obj_fn, SplitedLayer, SplitedParam
-from core.ZO_Estim.model_utils import vit_opt_able_layers_dict, vit_get_iterable_block_name, vit_pre_block_forward, vit_post_block_forward
+from core.ZO_Estim.ZO_model_utils import vit_opt_able_layers_dict, vit_get_iterable_block_name, vit_pre_block_forward, vit_post_block_forward
 
 def train(args, model, dl, opt, scheduler, epoch, ZO_Estim=None):
     model.train()
