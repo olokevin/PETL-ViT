@@ -22,8 +22,8 @@ LR=1e-3
 ### FO
 # CUDA_VISIBLE_DEVICES=1 python main.py --dataset $DATASET --method $METHOD --dim $DIM --bit $BIT --scale $SCALE
 ### ZO
-# CUDA_VISIBLE_DEVICES=1 python main.py --ZO_Estim --lr $LR --dataset $DATASET --method $METHOD --dim $DIM --bit $BIT --scale $SCALE
+CUDA_VISIBLE_DEVICES=1 python main.py --ZO_Estim --lr $LR --dataset $DATASET --method $METHOD --dim $DIM --bit $BIT --scale $SCALE
 
-CUDA_VISIBLE_DEVICES=1 nohup python main.py --ZO_Estim --lr $LR --dataset $DATASET --method $METHOD --dim $DIM --bit $BIT --scale $SCALE >/dev/null 2>&1 &
+# CUDA_VISIBLE_DEVICES=1 nohup python main.py --ZO_Estim --lr $LR --dataset $DATASET --method $METHOD --dim $DIM --bit $BIT --scale $SCALE >/dev/null 2>&1 &
 
 # nohup bash scripts/run.sh  >/dev/null 2>&1 &

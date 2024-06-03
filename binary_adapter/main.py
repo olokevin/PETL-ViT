@@ -13,7 +13,8 @@ import adaptformer
 import lora
 
 import time
-from core.ZO_Estim.ZO_Estim_entry import build_ZO_Estim, build_obj_fn, SplitedLayer, SplitedParam, vit_get_iterable_block_name, vit_pre_block_forward, vit_post_block_forward
+from core.ZO_Estim.ZO_Estim_entry import build_ZO_Estim, build_obj_fn, SplitedLayer, SplitedParam
+from core.ZO_Estim.model_utils import vit_opt_able_layers_dict, vit_get_iterable_block_name, vit_pre_block_forward, vit_post_block_forward
 
 def train(args, model, dl, opt, scheduler, epoch, ZO_Estim=None):
     model.train()
@@ -253,7 +254,7 @@ if __name__ == '__main__':
         
         vit = vit.cuda()
         if args.ZO_Estim:
-            ZO_Estim = build_ZO_Estim(args.ZO_Estim, model=vit)
+            ZO_Estim = build_ZO_Estim(args.ZO_Estim, model=vit, opt_able_layers_dict=vit_opt_able_layers_dict)
         else:
             ZO_Estim = None
 

@@ -7,7 +7,7 @@ from torch import nn
 import torch.nn.functional as F
 
 from scipy.stats import qmc
-from .ZO_Estim_entry import split_model, split_named_model, SplitedLayer, SplitedParam
+from .ZO_utils import split_model, split_named_model, SplitedLayer, SplitedParam
 from .QMC_sampler import sphere_n, coord_basis, block_mask_generator, layer_mask_generator
 
 DEBUG=False
@@ -254,7 +254,7 @@ class ZO_Estim_MC(nn.Module):
             # if type(splited_layer) == nn.Linear:
             #     pre_activ = splited_layer.layer.pre_actv
             #     splited_layer.layer.adapter_up.weight.grad = torch.matmul(ZO_grad.T, pre_activ)
-            #     splited_layer.layer.adapter_up.bias.grad = torch.mean(ZO_grad, dim=0)
+            #     splited_layer.layer.adapter_up.bias.grad = torch.sum(ZO_grad, dim=0)
             # else:
             #     splited_layer.layer.local_backward(ZO_grad) 
 
